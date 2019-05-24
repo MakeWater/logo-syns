@@ -4,6 +4,7 @@ import os
 import urllib
 import gzip
 import cPickle as pickle
+import h5py
 
 def unpickle(file):
     fo = open(file, 'rb')
@@ -14,7 +15,7 @@ def unpickle(file):
 def cifar_generator(filenames, batch_size, data_dir, ret_size = False):
     all_data = []
     all_labels = []
-    for filename in filenames:        
+    for filename in filenames:
         data, labels = unpickle(data_dir + '/' + filename)
         all_data.append(data)
         all_labels.append(labels)
@@ -30,11 +31,11 @@ def cifar_generator(filenames, batch_size, data_dir, ret_size = False):
         np.random.shuffle(labels)
 
         for i in xrange(len(images) / batch_size):
-            yield (images[i*batch_size:(i+1)*batch_size].reshape((batch_size, 3, 32, 32)), labels[i*batch_size:(i+1)*batch_size])
+            yield (images[i*batch_size:(i+1)*batch_size].reshape((batch_size, 3, 32, 32)),    labels[i*batch_size:(i+1)*batch_size])
     
     if ret_size:
         return get_epoch, size
-        
+
     return get_epoch
 
 
