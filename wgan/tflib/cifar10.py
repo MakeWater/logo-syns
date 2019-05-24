@@ -31,8 +31,10 @@ def cifar_generator(filenames, batch_size, data_dir, ret_size = False):
 
         for i in xrange(len(images) / batch_size):
             yield (images[i*batch_size:(i+1)*batch_size].reshape((batch_size, 3, 32, 32)), labels[i*batch_size:(i+1)*batch_size])
+    
     if ret_size:
         return get_epoch, size
+        
     return get_epoch
 
 

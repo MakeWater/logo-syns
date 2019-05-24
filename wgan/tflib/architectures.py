@@ -15,16 +15,17 @@ import tensorflow as tf
 
 def Generator_Resnet_32(cfg, n_samples, labels, noise=None, is_training=True):
     if noise is None:
-        noise = tf.random_normal([n_samples, 128])
+        noise = tf.random_normal([n_samples, 768]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源
     add_dim = 0
     if cfg.LAYER_COND:
-        y = labels
-        noise = tflib.ops.concat.concat([noise, y], 1)
+        y = labels  #（2,32,32）
+        noise = tflib.ops.concat.concat([noise, y], 1)  # (bs,768+32)
         add_dim = cfg.N_LABELS # number of cluster,for example:128,64,32
-    output = lib.ops.linear.Linear('Generator.Input', 128 + add_dim, 4 * 4 * cfg.DIM_G, noise) # matmul noise with uniform/Gaussion distribution
+                                   # (name,inputdim,outputdim,inputs,...):('Generator.Input',inputdim=768,outputdim=2048,input= noise)
+    output = lib.ops.linear.Linear('Generator.Input', 768 + add_dim, 4 * 4 * cfg.DIM_G, noise) # matmul noise with uniform/Gaussion distribution
     output = tf.reshape(output, [-1, cfg.DIM_G, 4, 4])
     #(cfg,name,input_dim,output_dim,filter_size,inputs,resample,no_dropout,labels,is_traing=True)
-    output = ResidualBlock(cfg, 'Generator.1', cfg.DIM_G, cfg.DIM_G, 3, output, resample='up', labels=labels,
+    output = ResidualBlock(cfg, 'Generator.1', cfg.DIM_G, cfg.DIM_G, filter_size=3, inputs= output, resample='up', labels=labels,
                            is_training=is_training)
     output = ResidualBlock(cfg, 'Generator.2', cfg.DIM_G, cfg.DIM_G, 3, output, resample='up', labels=labels,
                            is_training=is_training)
@@ -40,7 +41,7 @@ def Generator_Resnet_32(cfg, n_samples, labels, noise=None, is_training=True):
     return tf.reshape(output, [-1, cfg.OUTPUT_DIM])
 
 
-def Discriminator_Resnet_32(cfg, inputs, labels, noise=None, is_training=True):
+def Discriminator_Resnet_32(cfg, inputs, labels,is_training=True):
     output = tf.reshape(inputs, [-1, 3, 32, 32])
     add_dim = 0
     if cfg.LAYER_COND:

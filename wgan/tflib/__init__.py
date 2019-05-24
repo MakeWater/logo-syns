@@ -22,10 +22,10 @@ def param(name, *args, **kwargs):
 
     if name not in _params:
         kwargs['name'] = name
-        param = tf.Variable(*args, **kwargs)
+        param = tf.Variable(*args, **kwargs) # param is weight_values
         param.param = True
         _params[name] = param
-    result = _params[name]
+    result = _params[name] 
     i = 0
     while result in _param_aliases:
         # print 'following alias {}: {} to {}'.format(i, result, _param_aliases[result])

@@ -36,7 +36,7 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             )
             center = filter_size // 2
 
-            # Mask out future locations
+            # Mask out future locations # 屏蔽未来位置
             # filter shape is (height, width, input channels, output channels)
             mask[center+1:, :, :, :] = 0.
             mask[center, center+1:, :, :] = 0.

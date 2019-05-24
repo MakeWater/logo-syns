@@ -37,41 +37,41 @@ class Config(object):
         self.ACGAN = 0  # BOOLEAN If CONDITIONAL, whether to use ACGAN or "vanilla" conditioning
         self.ACGAN_SCALE = 1.  # How to scale the critic's ACGAN loss relative to WGAN loss
         self.ACGAN_SCALE_G = 0.1  # How to scale generator's ACGAN loss relative to WGAN loss
-        self.ARCHITECTURE = 'resnet-32' #'resnet-32'  # used GAN architecture 在这里更改使用的模型结构
+        self.ARCHITECTURE = 'resnet-32' #'resnet-32'  # used GAN architecture 在这里更改使用的模型结构 ###########################
 
         self.BATCH_SIZE = 64  # Critic batch size
-        self.bn_init = False
+        self.bn_init = True
         self.CONDITIONAL = 0  # BOOLEAN Whether to train a conditional or unconditional model
 
         self.DIM_G = 128  # Generator dimensionality
         self.DIM_D = 128  # Critic dimensionality
         self.DECAY = 1  # BOOLEAN Whether to decay LR over learning
-        self.DATA_LOADER = 'hdf5'  # Data format to be used
-        self.DATA = 'data/LLD-icon-transform.hdf5'  # Path to training data (folder or file depending on fromat)
+        self.DATA_LOADER = 'hdf5'  # Data format to be used                      ##################################
+        self.DATA = 'data/cifar-new.hdf5'  # Path to training data (folder or file depending on fromat)       ##############################
 
         self.GEN_BS_MULTIPLE = 2  # Generator batch size, as a multiple of BATCH_SIZE 作为批量大小的倍数
 
         self.ITERS = 100000  # How many iterations to train for
-        self.INCEPTION_FREQUENCY = 1  # How frequently to calculate Inception score
+        self.INCEPTION_FREQUENCY = 10000 # How frequently to calculate Inception score
         self.KEEP_CHECKPOINTS = 5  # Number of checkpoints to keep (long-term, spread out over entire training time)
 
-        self.LABELS = 'labels/resnet1/rc_32'  # Path to labels: Either the filesystem location of a pickle file containing the labels or the path to the label dataset within a HDF5 file 
+        self.LABELS = 'label/cifar-rc-32'  # Path to labels: Either the filesystem location of a pickle file containing the labels or the path to the label dataset within a HDF5 file 
         self.LAYER_COND = 1  # BOOLEAN feed the labels to every layer in generator and discriminator
         self.LR = 0  # Initial learning rate [0 --> default]
         self.LAMBDA = 10  # gradient penalty lambda
 
-        self.MODE = 'wgan-gp' #'wgan-gp'  # training mode
+        self.MODE = 'wgan-gp' #'wgan-gp'  # training mode            #####################
         
         self.N_GPUS = 1
         self.NORMALIZATION_G = 1  # BOOLEAN Use batchnorm in generator?
         self.NORMALIZATION_D = 0  # BOOLEAN Use batchnorm (or layernorm) in critic?
-        self.N_LABELS = 32  # Number of label classes :label 类别的数目
+        self.N_LABELS = 32  # Number of label classes :label 类别的数目             ################################
         self.N_CRITIC = 5  # Critic steps per generator steps (except for lsgan and DCGAN training modes)
         self.N_GENERATOR = 3  # Generator steps per critic step for DCGAN training mode
 
         self.OUTPUT_RES = 32 # icon图标的宽高为32x32，也是Res-Generator最后生成图像的大小
         self.OUTPUT_DIM = self.OUTPUT_RES * self.OUTPUT_RES * 3  # 一张图片的总像素数
-        self.RUN_NAME = 'resnet32'  # name for this experiment run
+        self.RUN_NAME = 'resnet32'  # name for this experiment run          #################################
         self.SUMMARY_FREQUENCY = 1  # How frequently to write out a tensorboard summary
 
         if self.N_GPUS not in [1, 2]:
@@ -181,15 +181,19 @@ class WGAN(object):
 
         # 输入数据：
         self._iteration = tf.placeholder(tf.int32, shape=None)
-        self.all_real_data_int = tf.placeholder(tf.int32, shape=[cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES])
-        self.all_real_labels = tf.placeholder(tf.int32, shape=[cfg.BATCH_SIZE])
-        self.fixed_noise = tf.constant(np.random.normal(size=(100, 128)).astype('float32')) # 固定的高斯噪声，(100,128)维
+        self.all_real_data_int = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES))
+        self.all_real_labels = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE,))
+
+        self.new_noise = tf.placeholder(tf.float32,shape=[cfg.BATCH_SIZE,768]) # 在结构定义中有默认noise，但这里我们要改为特定的noise，不是随意的
+
+        self.fixed_noise = tf.constant(np.random.normal(size=(100, 768)).astype('float32')) # 固定的高斯噪声，(100,128)维,用于检验G的产出
         if cfg.LAYER_COND:
             self.fixed_labels = tf.one_hot(np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32'),
                                            depth=cfg.N_LABELS) # depth定义了one-hot标签的维度，即128类为128维。（100,128）维的固定one-hot向量
         else:
             self.fixed_labels = tf.constant(np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32'))
         self.z = None
+
         self.y = None
         self.label_probs = None
         # if cfg.DATA_LOADER in ['hdf5', 'twitter'] and cfg.LABELS != 'None':
@@ -243,13 +247,14 @@ class WGAN(object):
             with open(os.path.join(self.run_dir, 'config.json'), 'w') as f:
                 json.dump(self.cfg.__dict__, f) # 把字典存到文件confi.json中去
 
-    # initializes the sampler (used for GAN inference) 用于G的生成
+    # initializes the sampler (used for GAN inference) 用于G的推理
     def _init_sampler(self):
         t_False = tf.constant(True, dtype=tf.bool)
         self.update_moving_stats = False
         y_shape = (None, self.cfg.N_LABELS) if self.cfg.LAYER_COND else (None,) #如果使用条件gan模型，则等于label种类数。
+        self.y = tf.placeholder((tf.float32 if self.cfg.LAYER_COND else tf.int32), shape=y_shape, name='y') # y标签即用于G也用于D
+
         self.z = tf.placeholder(tf.float32, shape=(None, 128), name='z') # z的shape和label有多少种类有关
-        self.y = tf.placeholder((tf.float32 if self.cfg.LAYER_COND else tf.int32), shape=y_shape, name='y') 
         all_real_data = tf.reshape(2 * ((tf.cast(self.all_real_data_int, tf.float32) / 256.) - .5),
                                    [self.cfg.BATCH_SIZE, self.cfg.OUTPUT_DIM]) # 把输入图片从4D整到2D
 
@@ -262,7 +267,7 @@ class WGAN(object):
         self.sampler_initialized = True
 
     # returns a batch of latent space samples with the correct distribution 产生 z
-    def sample(self, z=None, y=None):
+    def sample_g(self, z=None, y=None):
         if z is None:
             z = np.random.normal(size=(100, 128)).astype('float32') 
         if y is None:
@@ -276,11 +281,6 @@ class WGAN(object):
         samples = samples.reshape((len(z), 3, self.cfg.OUTPUT_RES, self.cfg.OUTPUT_RES))
         return samples.transpose((0, 2, 3, 1))
 
-    def z_sampler(self, size=None): ############ 这个函数没用上 ##########
-        if size is None:
-            size = self.cfg.BATCH_SIZE
-        return np.random.normal(size=(size, 128)).astype('float32')
-
     def sample_d(self, input, y):  ########### 这个函数也没用上 #########
         if self.cfg.LAYER_COND and len(y.shape)==1 : # 逻辑运算符的优先级仅高于lambda，低于比较运算符的优先级
             y = np.eye(self.cfg.N_LABELS)[y]
@@ -288,6 +288,12 @@ class WGAN(object):
             self._init_sampler()
         return self.session.run(self.sampler_d, feed_dict={self.all_real_data_int: input,
                                                            self.y: y, self.t_train: False})
+
+    def z_sampler(self, size=None): ############ 这个函数没用上 ########## 返回(BATCH_SIZE,128)维的高斯噪声
+        if size is None:
+            size = self.cfg.BATCH_SIZE
+        return np.random.normal(size=(size, 128)).astype('float32')
+
 
     def train(self):
         cfg = self.cfg
@@ -298,19 +304,24 @@ class WGAN(object):
             DEVICES = [DEVICES[0], DEVICES[0]] # DEVICES = ['/gpu:0','/gpu:0'] ，len(DEVICES) = 2
 
         if cfg.LAYER_COND:                       # self.all_real_labels是占位变量，大小为batch_size
-            labels_splits = tf.split(tf.one_hot(self.all_real_labels, depth=cfg.N_LABELS), len(DEVICES), axis=0) # 把传入的128维label分成两份
+            labels_splits = tf.split(tf.one_hot(self.all_real_labels, depth=cfg.N_LABELS), len(DEVICES), axis=0) # (2,32,32),两份，每份32个，每个是深度为32的one-hot标签
         else:
             labels_splits = tf.split(self.all_real_labels, len(DEVICES), axis=0)
         
+        if cfg.LAYER_COND:
+            noise_splits = tf.split(self.new_noise,len(DEVICES),axis=0) 
+
         # G生成的样本叫fake_data_splits，数目是半个batch_size大小。相应的labels_splits是由传入的真实label分成两等分，与之对应。
         fake_data_splits = []
         for i, device in enumerate(DEVICES):
             with tf.device(device):
-                fake_data_splits.append(self.Generator(cfg, cfg.BATCH_SIZE / len(DEVICES), labels_splits[i], is_training=self.t_train))
+
+                # G的默认输入是在其结构定义中的；label这里用的已经是真是标签；我的目的是在其结构定义的地方把默认输入换成与标签对应的高频通道噪声。
+                fake_data_splits.append(self.Generator(cfg, cfg.BATCH_SIZE / len(DEVICES), labels_splits[i],noise=noise_splits[i] ,is_training=self.t_train)) 
 
         # 这一步对传入的真实数据的处理就看不懂了，转换数据类型再除以256.属于归一化，再减0.5、乘以2是什么意思？
         # 归一化把数据归一到[0,1),减去0.5变成[-0.5,0.5),再乘以2再次放缩到[-1,1)范围内。 紧接着就是再加上一个均匀分布进一步反量化。
-        all_real_data = tf.reshape(2 * ((tf.cast(self.all_real_data_int, tf.float32) / 256.) - .5),  
+        all_real_data = tf.reshape(2 * ((tf.cast(self.all_real_data_int, tf.float32) / 256.) - .5),
                                    [cfg.BATCH_SIZE, cfg.OUTPUT_DIM])
         all_real_data += tf.random_uniform(shape=[cfg.BATCH_SIZE, cfg.OUTPUT_DIM], minval=0.,
                                            maxval=1. / 128)  # dequantize 为什么所有的real_data都要加一个反量化的矩阵？？？
@@ -320,11 +331,11 @@ class WGAN(object):
         DEVICES_B = DEVICES[:len(DEVICES) / 2] # DEVICES[0] = '/gpu:0'
         DEVICES_A = DEVICES[len(DEVICES) / 2:] # DEVICES[1] = '/gpu:0'
 
-        disc_costs = [] # 计算discriminator上的损失
+        disc_costs = [] # 计算D上的损失
         disc_acgan_costs = []
         disc_acgan_accs = []
         disc_acgan_fake_accs = []
-        # 把一个batchsize大小的真实数据和G生成的fakedata拼接在一起；传入的标签label_splits拼接在一起； 
+        # 把一个batchsize大小的真实数据和G生成的fakedata拼接在一起；传入的标签label_splits拼接在一起； 然后统一传给D计算损失
         # 这样拼接后的大小是 2个batchsize大小
         for i, device in enumerate(DEVICES_A):
             with tf.device(device): # device_a = '/gpu:0'
@@ -344,13 +355,11 @@ class WGAN(object):
 
                 disc_real = disc_all[:cfg.BATCH_SIZE / len(DEVICES_A)] # D产生损失的前半段是真实数据的损失，后半段是fake数据的损失
                 disc_fake = disc_all[cfg.BATCH_SIZE / len(DEVICES_A):]
+                # 不同模型不同计算损失的方式：
                 if cfg.MODE == 'wgan' or cfg.MODE == 'wgan-gp':
-                    disc_costs.append(tf.reduce_mean(disc_fake) - tf.reduce_mean(disc_real)) # 一般情况在fake上的损失大于在real上的损失
-
+                    disc_costs.append(tf.reduce_mean(disc_fake) - tf.reduce_mean(disc_real)) # wgan-gp模型计算两个分布之间的损失
                 elif cfg.MODE == 'dcgan':
-                    disc_costs.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_real,
-                                                                                             labels=tf.ones_like(
-                                                                                                 disc_real))) / 2.)
+                    disc_costs.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_real,labels=tf.ones_like(disc_real))) / 2.) # dcgan只计算D在real上的交叉熵
                 elif cfg.MODE == 'lsgan':
                     disc_costs.append(tf.reduce_mean((disc_real - 1) ** 2) / 2.)
 
@@ -379,7 +388,8 @@ class WGAN(object):
                             tf.float32
                         )
                     ))
-
+        
+        # device A 从D计算损失；device B从G生成的数据和真实数据之间的差异计算损失，且这种区别仅在于wgan上，在其他模型上没有变化。
         for i, device in enumerate(DEVICES_B):
             with tf.device(device):
                 real_data = tf.concat([all_real_data_splits[i], all_real_data_splits[len(DEVICES_A) + i]], axis=0) # shape:(BATCHSIZE,OUTPUT_RES)，即(64,3*32*32)
@@ -396,10 +406,11 @@ class WGAN(object):
                     )
                     differences = fake_data - real_data
                     interpolates = real_data + (alpha * differences) ############ 插值 ###########
+                    # 相比于device A ，B 中D的输入变了，变成了插值；A中D的输入是单纯把real和fake拼接起来作为输入；B中把D的输出再和输入做一次梯度计算。
                     gradients = tf.gradients(self.Discriminator(cfg, interpolates, labels)[0], [interpolates])[0] # ys中每个y对xs中每个x求导之和为一个tensor，最后输出的tensor个数和xs中含有的x数目一致
-                    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
-                    gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
-                    disc_costs.append(cfg.LAMBDA * gradient_penalty)
+                    slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), axis=[1]))
+                    gradient_penalty = tf.reduce_mean((slopes - 1.0)**2)
+                    disc_costs.append(cfg.LAMBDA * gradient_penalty) # cfg.LAMBDA = 10
 
                 elif cfg.MODE == 'dcgan':
                     disc_costs.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake,
@@ -408,7 +419,7 @@ class WGAN(object):
                 elif cfg.MODE == 'lsgan':
                     disc_costs.append(tf.reduce_mean((disc_fake - 0) ** 2) / 2.)
 
-        disc_wgan = tf.add_n(disc_costs) / len(DEVICES_A) # D的wgan损失，即两个数据分部之间的损失，也称“推土机距离”
+        disc_wgan = tf.add_n(disc_costs) / len(DEVICES_A) # D的wgan损失，即两个数据分部之间的损失，也称“推土机距离”；计算损失的时候要除以2是因为损失算是在相同数据上算了两遍，尤其是对于非wgan模型
         tf.summary.scalar('disc_cost', disc_wgan)
 
         if cfg.CONDITIONAL and cfg.ACGAN:
@@ -428,13 +439,15 @@ class WGAN(object):
         gen_acgan_costs = []
         for i, device in enumerate(DEVICES):
             with tf.device(device):
-                n_samples = cfg.GEN_BS_MULTIPLE * cfg.BATCH_SIZE / len(DEVICES) # 2*64/2
+                n_samples = cfg.GEN_BS_MULTIPLE * cfg.BATCH_SIZE / len(DEVICES) # 2*64/2=64
                 fake_labels = tf.concat([labels_splits[(i + n) % len(DEVICES)] for n in range(cfg.GEN_BS_MULTIPLE)],axis=0)
 
-                disc_fake, disc_fake_acgan = self.Discriminator(cfg, self.Generator(cfg, n_samples, fake_labels,is_training=self.t_train),fake_labels) # D鉴别G的损失
+                disc_fake, disc_fake_acgan = self.Discriminator(cfg, self.Generator(cfg, n_samples, fake_labels,noise=self.new_noise ,is_training=self.t_train),fake_labels) # D鉴别G的损失
 
                 if cfg.MODE == 'wgan' or cfg.MODE == 'wgan-gp':
                     gen_costs.append(-tf.reduce_mean(disc_fake))
+
+
                 elif cfg.MODE == 'dcgan':
                     gen_costs.append(tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=disc_fake,
                                                                                             labels=tf.ones_like(
@@ -485,8 +498,7 @@ class WGAN(object):
 
         # Function for generating samples
         # todo: check possibility to change this to none
-        fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 由固定噪声产生的样本
-
+        fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 由固定噪声产生的样本,这里fixed_noise删掉都可以
         # Function to generate samples
         def generate_image(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
             samples = self.session.run(fixed_noise_samples, feed_dict={self.t_train: True})
@@ -515,13 +527,15 @@ class WGAN(object):
             all_samples = all_samples.reshape((-1, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)).transpose(0, 2, 3, 1) #3通道32x32的图片
             return lib.inception_score.get_inception_score(list(all_samples))
 
+
         data_loader = self.get_data_loader()
         train_gen = data_loader.load_new(cfg)
 
         def inf_train_gen():  # 从数据集加载数据和label
             while True:
-                for images, _labels in train_gen():
-                    yield images, _labels  
+                for images, _labels, images_HH in train_gen():
+                    yield images, _labels, images_HH # images_HH for G inputs.
+
 
         for name, grads_and_vars in [('G', gen_gv), ('D', disc_gv)]: # 分别输出G和D的参数名称和参数
             print "{} Params:".format(name)
@@ -547,23 +561,22 @@ class WGAN(object):
         summary_writer = tf.summary.FileWriter(os.path.join(self.tb_dir, 'run_%i' % run_number), session.graph)
         # separate dev disc cost
         dev_cost_summary = tf.summary.scalar('dev_disc_cost', disc_cost)
-
         session.run(tf.global_variables_initializer())
-
         self.saver = tf.train.Saver()
         self.restore_model()
 
         gen = inf_train_gen()
-        sample_images, sample_labels = gen.next()
+        sample_images, sample_labels, sample_images_HH = gen.next() #shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
         if sample_labels is None:
             sample_labels = [0] * cfg.BATCH_SIZE
 
-        # Save a batch of ground-truth samples
-        _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images,
-                                                      self.all_real_labels: sample_labels})
+
+        # Save a batch of ground-truth samples 
+        _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images})
         _x_r = ((_x_r + 1.) * (255.99 / 2)).astype('int32')
         lib.save_images.save_images(_x_r.reshape((cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
                                     os.path.join(self.run_dir, 'samples_groundtruth.png'))
+
 
         if cfg.CONDITIONAL and cfg.ACGAN:
             _costs = {'cost': [], 'wgan': [], 'acgan': [], 'acgan_acc': [], 'acgan_fake_acc': []}
@@ -578,26 +591,31 @@ class WGAN(object):
                 gen_iters = cfg.N_GENERATOR # 3，如果是DCGAN模型则训练三次G训练一次D
             else:
                 gen_iters = 1 # 训练1次
-            if iteration > 0 and '_labels' in locals():
+            if iteration > 0 and '_labels' in locals() and '_data_HH' in locals():
                 for i in xrange(gen_iters):
                     _ = self.session.run([gen_train_op], feed_dict={self._iteration: iteration,
                                                                     self.all_real_labels: _labels,
+                                                                    self.new_noise:_data_HH,
                                                                     self.t_train: True})
 
             if (cfg.MODE == 'dcgan') or (cfg.MODE == 'lsgan'):
                 disc_iters = 1 
             else:
                 disc_iters = cfg.N_CRITIC # 不是dcgan和lsgan，每训练一次G训练五次D
+
             for i in xrange(disc_iters):
-                _data, _labels = gen.next() # 训练D有两个三个输入：来自G和real的数据以及相同的label.
+                _data, _labels,_data_HH = gen.next() # 训练D有两个三个输入：来自G和real的数据以及相同的label.
                 if _labels is None:
                     _labels = [0] * cfg.BATCH_SIZE
                 if cfg.CONDITIONAL and cfg.ACGAN:
                     _summary, _disc_cost, _disc_wgan, _disc_acgan, _disc_acgan_acc, _disc_acgan_fake_acc, _ = \
                         self.session.run([summaries_merged, disc_cost, disc_wgan, disc_acgan, disc_acgan_acc,
                                           disc_acgan_fake_acc, disc_train_op],
-                                         feed_dict={self.all_real_data_int: _data, self.all_real_labels: _labels,
-                                                    self._iteration: iteration, self.t_train: True})
+                                         feed_dict={self.all_real_data_int: _data, 
+                                                    self.all_real_labels: _labels,
+                                                    self.new_noise: _data_HH,
+                                                    self._iteration: iteration, 
+                                                    self.t_train: True})
                     _costs['cost'].append(_disc_cost)
                     _costs['wgan'].append(_disc_wgan)
                     _costs['acgan'].append(_disc_acgan)
@@ -607,11 +625,15 @@ class WGAN(object):
                     _summary, _disc_cost, _ = self.session.run([summaries_merged, disc_cost, disc_train_op],
                                                                feed_dict={self.all_real_data_int: _data,
                                                                           self.all_real_labels: _labels,
+                                                                          self.new_noise: _data_HH,
                                                                           self._iteration: iteration,
                                                                           self.t_train: True})
                     _costs['cost'].append(_disc_cost)
                 if cfg.MODE == 'wgan':
                     _ = self.session.run([clip_disc_weights])
+
+
+            # --------------------------------------------- #
 
             if iteration % cfg.SUMMARY_FREQUENCY == cfg.SUMMARY_FREQUENCY - 1:
                 summary_writer.add_summary(_summary, iteration)
@@ -619,6 +641,7 @@ class WGAN(object):
             if iteration % 100 == 99:
                 _dev_cost_summary = self.session.run(dev_cost_summary, feed_dict={self.all_real_data_int: sample_images,
                                                                                   self.all_real_labels: sample_labels,
+                                                                                  self.new_noise: sample_images_HH,
                                                                                   self.t_train: True})
                 summary_writer.add_summary(_dev_cost_summary, iteration)
                 generate_image(self.sample_dir, iteration)
