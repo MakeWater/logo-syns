@@ -13,18 +13,17 @@ import numpy as np
 import tensorflow as tf
 
 
-def Generator_Resnet_32(cfg, n_samples, labels, noise=None, is_training=True):
+def Generator_Resnet_32(cfg, n_samples, labels, noise=None, new_noise=None, is_training=True):
     if noise is None:
-        noise = tf.random_normal([n_samples, 768]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
-    noise_shape = tf.shape(noise)
-
+        noise = tf.random_normal([n_samples, 128]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
+        noise = tf.concat([noise,new_noise],axis=1) # (bs,256)
     add_dim = 0
     if cfg.LAYER_COND:
         y = labels  #（2,32,32）
-        noise = tflib.ops.concat.concat([noise, y], 1)  # (bs,768+32)
+        noise = tflib.ops.concat.concat([noise, y], 1)  # (bs,256+cfg.N_LABELS), 
         add_dim = cfg.N_LABELS # number of cluster; y 的深度和N_LABELS是一致的
-                                   # (name,inputdim,outputdim,inputs,...):('Generator.Input',inputdim=768,outputdim=2048,input= noise)  tf.cast(noise_shape[1],tf.int32)
-    output = lib.ops.linear.Linear('Generator.Input',  768 + add_dim, 4 * 4 * cfg.DIM_G, noise) # matmul noise with uniform/Gaussion distribution; noise.shape[1] are feature dimension.
+                                   # (name,inputdim,outputdim,inputs,...)； input dim 是输入时noise的1轴维度。
+    output = lib.ops.linear.Linear('Generator.Input',  256 + add_dim, 4 * 4 * cfg.DIM_G, noise) # matmul noise with uniform/Gaussion distribution; noise.shape[1] are feature dimension.
     output = tf.reshape(output, [-1, cfg.DIM_G, 4, 4])
     #(cfg,name,input_dim,output_dim,filter_size,inputs,resample,no_dropout,labels,is_traing=True)
     output = ResidualBlock(cfg, 'Generator.1', cfg.DIM_G, cfg.DIM_G, filter_size=3, inputs= output, resample='up', labels=labels,

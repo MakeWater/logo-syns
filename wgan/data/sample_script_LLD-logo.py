@@ -1,3 +1,4 @@
+# -*-coding: utf-8 -*-
 import numpy as np
 import h5py
 
@@ -15,7 +16,7 @@ image_label = hdf5_file['labels/resnet/rc_64'][i]
 
 # more advanced method: creating a data generator which re-shuffles the data for each epoch (useful for training models)
 
-def make_generator(file_path, batch_size, label_name=None):
+def make_generator(file_path, batch_size, label_name=None): # 返回一个全新的生成器对象
     hdf5_file = h5py.File(file_path, 'r')
     epoch_count = [1]
     def get_epoch():

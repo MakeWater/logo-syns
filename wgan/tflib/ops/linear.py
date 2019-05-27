@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import tflib as lib
 
 import numpy as np
@@ -36,14 +37,10 @@ def Linear(
     """
     with tf.name_scope(name) as scope:
 
-        def uniform(stdev, size):
+        def uniform(stdev, size): # 产生一个形状为size的均匀分布，
             if _weights_stdev is not None:
                 stdev = _weights_stdev
-            return np.random.uniform(
-                low=-stdev * np.sqrt(3),
-                high=stdev * np.sqrt(3),
-                size=size
-            ).astype('float32')
+            return np.random.uniform(low=-stdev * np.sqrt(3), high=stdev * np.sqrt(3), size=size).astype('float32') # size=(368,2048)
 
         if initialization == 'lecun':# and input_dim != output_dim):
             # disabling orth. init for now because it's too slow
@@ -54,10 +51,7 @@ def Linear(
 
         elif initialization == 'glorot' or (initialization == None):
 
-            weight_values = uniform(
-                np.sqrt(2./(input_dim+output_dim)),
-                (input_dim, output_dim)
-            )
+            weight_values = uniform(np.sqrt(2./(input_dim+output_dim)),(input_dim, output_dim)) # shape:(input_dim,output_dim)
 
         elif initialization == 'he':
 
@@ -107,11 +101,10 @@ def Linear(
 
         weight = lib.param(
             name + '.W',
-            weight_values
-        )
+            weight_values)
 
         if weightnorm==None:
-            weightnorm = _default_weightnorm
+            weightnorm = _default_weightnorm # deafult = False
         if weightnorm:
             norm_values = np.sqrt(np.sum(np.square(weight_values), axis=0))
             # norm_values = np.linalg.norm(weight_values, axis=0)
@@ -130,7 +123,7 @@ def Linear(
         #     weight = tf.nn.softsign(10.*weight)*.1
 
         if inputs.get_shape().ndims == 2:
-            result = tf.matmul(inputs, weight)
+            result = tf.matmul(inputs, weight) # inputs= noise, weight:(inputdim,outputdim)
         else:
             reshaped_inputs = tf.reshape(inputs, [-1, input_dim])
             result = tf.matmul(reshaped_inputs, weight)
