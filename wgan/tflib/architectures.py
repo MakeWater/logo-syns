@@ -13,10 +13,10 @@ import numpy as np
 import tensorflow as tf
 
 
-def Generator_Resnet_32(cfg, n_samples, labels, noise=None, new_noise=None, is_training=True):
+def Generator_Resnet_32(cfg, n_samples, labels, noise=None, is_training=True):
     if noise is None:
-        noise = tf.random_normal([n_samples, 128]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
-        noise = tf.concat([noise,new_noise],axis=1) # (bs,256)
+        noise = tf.random_normal([n_samples, 256]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
+
     add_dim = 0
     if cfg.LAYER_COND:
         y = labels  #（2,32,32）
