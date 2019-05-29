@@ -183,8 +183,8 @@ class WGAN(object):
         self._iteration = tf.placeholder(tf.int32, shape=None)
         self.all_real_data_int = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES))
         self.all_real_labels = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE,))
-
         self.new_noise = tf.placeholder(tf.float32,shape=[cfg.BATCH_SIZE,128]) # 在结构定义中有默认noise，但这里我们要改为特定的noise，不是随意的
+        
         self.noise = tf.concat([np.random.normal(size=(cfg.BATCH_SIZE,128)).astype('float32'),self.new_noise],axis=1) # (bs,256)
 
         self.fixed_noise = tf.constant(np.random.normal(size=(100, 256)).astype('float32')) # 固定的高斯噪声，(100,128)维,用于检验G的产出

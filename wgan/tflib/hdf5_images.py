@@ -35,12 +35,13 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
 
 
 def load(batch_size, data_file='/home/maolongchun/logo-syns/wgan/data/LLD-icon-sharp.hdf5', resolution=32, label_name=None):
-    hdf5_file = h5py.File(data_file, 'r')
-    n_images = len(hdf5_file['data'])
-    if label_name is not None:
-        n_labels = len(hdf5_file[label_name])
-        n_images = min(n_images, n_labels)
-    return make_generator(hdf5_file, n_images, batch_size, res=resolution, label_name=label_name)
+    with h5py.File('data_file','r') as hdf5_file:
+        # hdf5_file = h5py.File(data_file, 'r')
+        n_images = len(hdf5_file['data'])
+        if label_name is not None:
+            n_labels = len(hdf5_file[label_name])
+            n_images = min(n_images, n_labels)
+        return make_generator(hdf5_file, n_images, batch_size, res=resolution, label_name=label_name)
 
 
 def load_new(cfg):
