@@ -27,16 +27,18 @@ def save_img(images,size,path):
     # path = os.path.join(path,)
     return scipy.misc.imsave(path,merge(images,size))
 
-
-if __name__ == '__main__':
-    
+def main():
     with h5py.File('LLD-icon-sharp.hdf5','r') as hdf_file:
         images = np.array(hdf_file['data']).transpose(0,2,3,1)
         label = np.array(hdf_file['labels/resnet1/rc_128'])
         class_indices = [np.where(label==i)[0] for i in range(128)]
-        # sample = []
-        for i in range(len(class_indices)):
-            index_list = np.random.choice(class_indices[i],100)
+        sample_cluster = [16,45,103,124] #从这几个cluster选取样本
+        for i in sample_cluster:
+            index_list = np.random.choice(class_indices[i],12)
             # sample.append(images[index_list]) # (128,100,32,32,3)
-            sample_image = images[index_list]
-            save_img(sample_image,size=(10,10),path='sample_{}.png'.format(i))
+            sample_image = images[index_list] # (12,32,32,3)
+            save_img(sample_image,size=(3,4),path='sample_{}.png'.format(i)) # i表示cluster的标签
+
+if __name__ == '__main__':
+    main()
+    

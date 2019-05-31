@@ -16,6 +16,7 @@ import tflib.small_imagenet
 import tflib.inception_score
 import tflib.architectures
 
+import h5py
 import numpy as np
 import tensorflow as tf
 import json
@@ -71,7 +72,7 @@ class Config(object):
 
         self.OUTPUT_RES = 32 # icon图标的宽高为32x32，也是Res-Generator最后生成图像的大小
         self.OUTPUT_DIM = self.OUTPUT_RES * self.OUTPUT_RES * 3  # 一张图片的总像素数
-        self.RUN_NAME = 'sharp-rc_128'  # name for this experiment run          #################################
+        self.RUN_NAME = 'sharp_128_Z-LC'  # name for this experiment run          #################################
         self.SUMMARY_FREQUENCY = 1  # How frequently to write out a tensorboard summary
 
         if self.N_GPUS not in [1, 2]:
@@ -163,7 +164,13 @@ class WGAN(object):
 
         self.run_dir = os.path.join('runs', cfg.RUN_NAME) # ./runs/wgan_run_dir/
         self.save_dir = os.path.join(self.run_dir, 'checkpoints') # ./runs/wgan_run_dir/checkpoints ,note,this is a dir not file.
+        # self.ground_truth_sample_dir = os.path.join(self.run_dir,'ground_truth') # 只存储对应的真实图片
         self.sample_dir = os.path.join(self.run_dir, 'samples')
+        self.cluster_0 = os.path.join(self.sample_dir,'cluster0')
+        self.cluster_1 = os.path.join(self.sample_dir,'cluster1')
+        self.cluster_2 = os.path.join(self.sample_dir,'cluster2')
+        self.cluster_3 = os.path.join(self.sample_dir,'cluster3')
+        self.sample_path_list = [self.cluster_0,self.cluster_1,self.cluster_2,self.cluster_3]
         self.tb_dir = os.path.join(self.run_dir, 'tensorboard')
         self.saver = None
 
@@ -177,20 +184,19 @@ class WGAN(object):
                 if not os.path.exists(path):
                     os.makedirs(path)
 
-        maybe_mkdirs([self.run_dir, self.save_dir, self.sample_dir, self.tb_dir])
+        maybe_mkdirs([self.run_dir, self.save_dir, self.sample_dir, self.tb_dir,self.sample_path_list])
 
         # 输入数据：
         self._iteration = tf.placeholder(tf.int32, shape=None)
         self.all_real_data_int = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES))
         self.all_real_labels = tf.placeholder(tf.int32, shape=(cfg.BATCH_SIZE,))
-        self.new_noise = tf.placeholder(tf.float32,shape=[cfg.BATCH_SIZE,128]) # 在结构定义中有默认noise，但这里我们要改为特定的noise，不是随意的
+        self.new_noise = tf.placeholder(tf.float32,shape=[cfg.BATCH_SIZE,128]) # 定义待传入的高频噪声的形状
         
-        self.noise = tf.concat([np.random.normal(size=(cfg.BATCH_SIZE,128)).astype('float32'),self.new_noise],axis=1) # (bs,256)
+        # self.noise = tf.concat([np.random.normal(size=(cfg.BATCH_SIZE,128)).astype('float32'),self.new_noise],axis=1) # (bs,256)
 
-        self.fixed_noise = tf.constant(np.random.normal(size=(100, 256)).astype('float32')) # 固定的高斯噪声，(100,128)维,用于检验G的产出
+        # self.fixed_noise = tf.constant(np.random.normal(size=(100, 256)).astype('float32')) # 固定的高斯噪声，(100,128)维,用于检验G的产出
         if cfg.LAYER_COND:
-            self.fixed_labels = tf.one_hot(np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32'),
-                                           depth=cfg.N_LABELS) # depth定义了one-hot标签的维度，即128类为128维。（100,128）维的固定one-hot向量
+            self.fixed_labels = tf.one_hot(np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32'),depth=cfg.N_LABELS) # depth定义了one-hot标签的维度，即128类为128维。（100,128）维的固定one-hot向量
         else:
             self.fixed_labels = tf.constant(np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32'))
         self.z = None
@@ -208,6 +214,33 @@ class WGAN(object):
             source = ['', 'home'] + [self.cfg.DATA.split('/')[2]] + ['scratch'] + self.cfg.DATA.split('/')[3:]
             copyfile('/'.join(source), self.cfg.DATA) # 从绝对路径复制文件到目标路径cfg.DATA
             print('copied data')
+
+        def data_sample():
+            cluster = []
+            label_sample = []
+            with h5py.File('data/LLD-icon-sharp2.hdf5','r') as f:
+                data = np.array(f['data'])
+                HH_noise = np.array(f['data_hh'])
+                label = np.array(f['labels/resnet1/rc_128'])
+                class_indices = [np.where(label == i)[0] for i in range(self.cfg.N_LABELS)] #######################################  range(N_LABELS)
+                sample_cluster = [16,45,103,124]
+                for cluster_label in sample_cluster:
+                    index_list = np.random.choice(class_indices[cluster_label],12)
+                    sample_images = data[index_list] # (12,32,32,3)
+                    lib.save_images.save_images(sample_images,'sample_{}.png'.format(cluster_label))   
+
+                    HH_noise_sample = HH_noise[index_list]
+                    label_ = label[index_list]
+                    cluster.append(HH_noise_sample)
+                    label_sample.append(label_)
+            return data,HH_noise,label,cluster,label_sample # (bs,3,32,32),(bs,128),(4,12,3,32,32),(4,12,)
+
+        self.data,self.HH_noise,self.label,cluster,label_sample = data_sample()
+        assert(len(self.data)==len(self.HH_noise)==len(self.label))
+        self.cluster0, self.label0 = cluster[0], tf.one_hot(np.array(label_sample[0],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster1, self.label1 = cluster[1], tf.one_hot(np.array(label_sample[1],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster2, self.label2 = cluster[2], tf.one_hot(np.array(label_sample[2],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster3, self.label3 = cluster[3], tf.one_hot(np.array(label_sample[3],dtype='int32'),depth=self.cfg.N_LABELS)
         # ______________________________________________________________________________ # 构造函数__init__到此结束
 
     def get_data_loader(self):
@@ -252,7 +285,7 @@ class WGAN(object):
     def _init_sampler(self):
         t_False = tf.constant(True, dtype=tf.bool)
         self.update_moving_stats = False
-        y_shape = (None, self.cfg.N_LABELS) if self.cfg.LAYER_COND else (None,) #如果使用条件gan模型，则等于label种类数。
+        y_shape = (None, self.cfg.N_LABELS) if self.cfg.LAYER_COND else (None,) # 如果使用条件gan模型，则等于label种类数。
         self.y = tf.placeholder((tf.float32 if self.cfg.LAYER_COND else tf.int32), shape=y_shape, name='y') # y标签即用于G也用于D
 
         self.z = tf.placeholder(tf.float32, shape=(None, 128), name='z') # z的shape和label有多少种类有关
@@ -261,26 +294,27 @@ class WGAN(object):
 
         all_real_data += tf.random_uniform(shape=[self.cfg.BATCH_SIZE, self.cfg.OUTPUT_DIM], minval=0.,
                                            maxval=1. / 128)  # dequantize 一个batch的2D real data 加上相同形状的均匀分布噪声
-        self.sampler = self.Generator(self.cfg, n_samples=0, labels=self.y, noise=self.z, is_training=self.t_train)
+        self.sampler = self.Generator(self.cfg, n_samples=12, labels=self.y, noise=self.z, is_training=self.t_train)
         # if sampler_d not needed, is_training parameter can be removed
         self.sampler_d = self.Discriminator(self.cfg, inputs=all_real_data, labels=self.y, is_training=self.t_train)
         self.restore_model()
         self.sampler_initialized = True
 
-    # returns a batch of latent space samples with the correct distribution 产生 z
-    def sample_g(self, z=None, y=None):
+    # returns a batch of latent space samples by Generator 产生一个个cluster的图片
+    def sample_g(self,cluster_idx, z=None, y=None):
+        # input: cluster_idx,z:HH_noise,y:labels.
         if z is None:
-            z = np.random.normal(size=(100, 128)).astype('float32') 
+            z = np.random.normal(size=(12, 128)).astype('float32') #如果z为None则传入高斯噪声，否则传入高频噪声
         if y is None:
-            y = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] * 10, dtype='int32')
+            y = np.array([cluster_idx] * 12, dtype='int32') # 每个cluster_idx 代表一个cluster的标签；这里取都属于同一标签的12个样本
         if self.cfg.LAYER_COND and len(y.shape) == 1:
-            y = np.eye(self.cfg.N_LABELS)[y]
+            y = tf.one_hot(y,depth=self.cfg.N_LABELS)
         if not self.sampler_initialized:
             self._init_sampler()
         samples = self.session.run(self.sampler, feed_dict={self.z: z, self.y: y, self.t_train: False})
         samples = ((samples + 1.) * (255. / 2)).astype('int32')
         samples = samples.reshape((len(z), 3, self.cfg.OUTPUT_RES, self.cfg.OUTPUT_RES))
-        return samples.transpose((0, 2, 3, 1))
+        return samples.transpose((0, 2, 3, 1)) # (bs,32,32,3)
 
     def sample_d(self, input, y):  ########### 这个函数也没用上 #########
         if self.cfg.LAYER_COND and len(y.shape)==1 : # 逻辑运算符的优先级仅高于lambda，低于比较运算符的优先级
@@ -294,6 +328,7 @@ class WGAN(object):
         if size is None:
             size = self.cfg.BATCH_SIZE
         return np.random.normal(size=(size, 128)).astype('float32')
+
 
 
     def train(self):
@@ -310,7 +345,7 @@ class WGAN(object):
             labels_splits = tf.split(self.all_real_labels, len(DEVICES), axis=0)
         
         if cfg.LAYER_COND:
-            noise_splits = tf.split(self.noise,len(DEVICES),axis=0) 
+            noise_splits = tf.split(self.new_noise,len(DEVICES),axis=0) 
 
         # G生成的样本叫fake_data_splits，数目是半个batch_size大小。相应的labels_splits是由传入的真实label分成两等分，与之对应。
         fake_data_splits = []
@@ -318,7 +353,8 @@ class WGAN(object):
             with tf.device(device):
 
                 # G的默认输入是在其结构定义中的；label这里用的已经是真是标签；我的目的是在其结构定义的地方把默认输入换成与标签对应的高频通道噪声。
-                fake_data_splits.append(self.Generator(cfg, cfg.BATCH_SIZE / len(DEVICES), labels_splits[i],noise=noise_splits[i] ,is_training=self.t_train)) 
+                # 传入的label_splits[i] shape:(bs/2,cfg.N_LABELS),eg. (32,128),one-hot.
+                fake_data_splits.append(self.Generator(cfg, cfg.BATCH_SIZE / len(DEVICES), labels_splits[i],HH_noise=noise_splits[i] ,is_training=self.t_train))  
 
         # 这一步对传入的真实数据的处理就看不懂了，转换数据类型再除以256.属于归一化，再减0.5、乘以2是什么意思？
         # 归一化把数据归一到[0,1),减去0.5变成[-0.5,0.5),再乘以2再次放缩到[-1,1)范围内。 紧接着就是再加上一个均匀分布进一步反量化。
@@ -443,7 +479,7 @@ class WGAN(object):
                 n_samples = cfg.GEN_BS_MULTIPLE * cfg.BATCH_SIZE / len(DEVICES) # 2*64/2=64
                 fake_labels = tf.concat([labels_splits[(i + n) % len(DEVICES)] for n in range(cfg.GEN_BS_MULTIPLE)],axis=0)
 
-                disc_fake, disc_fake_acgan = self.Discriminator(cfg, self.Generator(cfg, n_samples, fake_labels,noise=self.noise ,is_training=self.t_train),fake_labels) # D鉴别G的损失
+                disc_fake, disc_fake_acgan = self.Discriminator(cfg, self.Generator(cfg, n_samples, fake_labels,HH_noise=self.new_noise ,is_training=self.t_train),fake_labels) # D鉴别G的损失
 
                 if cfg.MODE == 'wgan' or cfg.MODE == 'wgan-gp':
                     gen_costs.append(-tf.reduce_mean(disc_fake))
@@ -497,14 +533,55 @@ class WGAN(object):
                 clip_ops.append(tf.assign(var, tf.clip_by_value(var, clip_bounds[0], clip_bounds[1])))
             clip_disc_weights = tf.group(*clip_ops)
 
+
+
+        def save_images(cluster,label_sample,log_dir_list,frame):
+            for idx,log_dir in enumerate(log_dir_list):
+                HH_noise_ = cluster[idx] #(12,128)
+                label_sample_ = label_sample[idx] # (bs,)
+                label_sample_ = tf.one_hot(label_sample_,depth=cfg.N_LABELS)
+                fixed_samples = self.Generator(cfg, 12, labels=label_sample_, HH_noise=HH_noise_) # 用于产生可视图像的G；传入的label和噪声要有对应关系才行
+                samples = self.session.run(fixed_samples)
+                # Function to generate samples
+                def generate_image(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+    
+                    samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+                    lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                                os.path.join(log_dir, 'G_samples_{}_{}.png'.format(idx,frame)))
+                generate_image(log_dir,frame)
+
+
         # Function for generating samples
         # todo: check possibility to change this to none
-        fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 用于产生可视图像的G；传入的label和噪声要有对应关系才行
+        # fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 用于产生可视图像的G；传入的label和噪声要有对应关系才行
+        fixed_noise_samples0 = self.Generator(cfg, 12, self.label0, HH_noise=self.cluster0, is_training=self.t_train) 
+        fixed_noise_samples1 = self.Generator(cfg, 12, self.label1, HH_noise=self.cluster1, is_training=self.t_train) 
+        fixed_noise_samples2 = self.Generator(cfg, 12, self.label2, HH_noise=self.cluster2, is_training=self.t_train) 
+        fixed_noise_samples3 = self.Generator(cfg, 12, self.label3, HH_noise=self.cluster3, is_training=self.t_train) 
+
         # Function to generate samples
-        def generate_image(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
-            samples = self.session.run(fixed_noise_samples, feed_dict={self.t_train: True})
+        def generate_image0(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples0, feed_dict={self.t_train: True})
             samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
-            lib.save_images.save_images(samples.reshape((100, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image1(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples1, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image2(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples2, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image3(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples3, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
                                         os.path.join(log_dir, 'samples_{}.png'.format(frame)))
 
         # Function for calculating inception score
@@ -527,12 +604,35 @@ class WGAN(object):
         # _ , lab, img_hh = sample_gen.next() # 生成器都自带next方法，去下一个batch的数据
         # fake_lab = tf.cast(tf.one_hot(lab,depth= cfg.N_LABELS),tf.float32)
 
-        samples_100 = self.Generator(cfg, 100, fake_labels_100, noise=self.fixed_noise, is_training=self.t_train) # 用于计算inception_score的G
+ 
+
+        def batch_generator(data,HH_noise,label,batch_size): # generator function return a generator object.
+            
+            batch_num = len(data)/batch_size
+            for batch in range(batch_num-1):
+                dt = data[batch*batch_size:(batch+1)*batch_size]
+                lab = label[batch:(batch+1)*batch_size]
+                hh_noise = HH_noise[batch:(batch+1)*batch_size]
+                yield dt,lab,hh_noise
+
+        # inception_sample_loader = self.get_data_loader()
+        # sample_gen = inception_sample_loader.load_new(cfg)
+        # def inf_gen():
+        #     while True:
+        #         for batch_data,batch_label,batch_noise in sample_gen():
+        #             yield batch_data,batch_label,batch_noise
+
+        # label = tf.one_hot(tf.cast(label,tf.int32),depth=cfg.N_LABELS)
+        incep_gen = batch_generator(self.data,self.HH_noise,self.label,cfg.BATCH_SIZE)
+        batch_data,batch_label,batch_noise = incep_gen.next() # 如果是生成器对象该对象可以直接调用.next()方法
+        batch_label = tf.one_hot(batch_label,depth=cfg.N_LABELS)
+        samples_64 = self.Generator(cfg, 64, batch_label, HH_noise=batch_noise, is_training=self.t_train) # 用于计算inception_score的G
+
         def get_inception_score(n): # n=100
             all_samples = []
             for i in xrange(n / 100): # xrange产生的是一个生成器对象
                 # todo
-                all_samples.append(session.run(samples_100, feed_dict={self.t_train: True}))
+                all_samples.append(session.run(samples_64, feed_dict={self.t_train: True}))
             all_samples = np.concatenate(all_samples, axis=0)
             all_samples = ((all_samples + 1.) * (255.99 / 2)).astype('int32') # (all_samples+1)*127
             all_samples = all_samples.reshape((-1, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)).transpose(0, 2, 3, 1) #3通道32x32的图片
@@ -570,21 +670,21 @@ class WGAN(object):
         
         # for train
         data_loader = self.get_data_loader()
-        train_gen = data_loader.load_new(cfg) # 每使用一次load_new方法就返回一个新的生成器
+        train_gen = data_loader.load_new(cfg) # train_gen是load_new(cfg)函数返回的一个函数对象，不是生成器对象
         def inf_train_gen():  # 从数据集加载数据和label
             while True:
                 for images, _labels, images_HH in train_gen():
                     yield images, _labels, images_HH # images_HH for G inputs.
 
         gen = inf_train_gen()
-        sample_images, sample_labels, sample_images_HH = gen.next() #shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
-        if sample_labels is None:
-            sample_labels = [0] * cfg.BATCH_SIZE
-        # Save a batch of ground-truth samples 
-        _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images}) # 传入(bs,3,32,32)真实图片
-        _x_r = ((_x_r + 1.) * (255.99 / 2)).astype('int32')
-        lib.save_images.save_images(_x_r.reshape((cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
-                                    os.path.join(self.run_dir, 'samples_groundtruth.png'))
+        sample_images, sample_labels, sample_images_HH = gen.next() # shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
+        # if sample_labels is None:
+        #     sample_labels = [0] * cfg.BATCH_SIZE
+        # # Save a batch of ground-truth samples 
+        # _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images}) # 传入(bs,3,32,32)真实图片
+        # _x_r = ((_x_r + 1.) * (255.99 / 2)).astype('int32')
+        # lib.save_images.save_images(_x_r.reshape((cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+        #                             os.path.join(self.run_dir, 'samples_groundtruth.png'))
 
 
         if cfg.CONDITIONAL and cfg.ACGAN:
@@ -613,7 +713,9 @@ class WGAN(object):
                 disc_iters = cfg.N_CRITIC # 不是dcgan和lsgan，每训练一次G训练五次D
 
             for i in xrange(disc_iters):
+
                 _data, _labels,_data_HH = gen.next() # 训练D有两个三个输入：来自G和real的数据以及相同的label.
+
                 if _labels is None:
                     _labels = [0] * cfg.BATCH_SIZE
                 if cfg.CONDITIONAL and cfg.ACGAN:
@@ -642,8 +744,6 @@ class WGAN(object):
                     _ = self.session.run([clip_disc_weights])
 
 
-            # --------------------------------------------- #
-
             if iteration % cfg.SUMMARY_FREQUENCY == cfg.SUMMARY_FREQUENCY - 1:
                 summary_writer.add_summary(_summary, iteration)
 
@@ -653,7 +753,11 @@ class WGAN(object):
                                                                                   self.new_noise: sample_images_HH,
                                                                                   self.t_train: True})
                 summary_writer.add_summary(_dev_cost_summary, iteration)
-                generate_image(self.sample_dir, iteration) # 这里检验G的生成图片
+                generate_image0(self.cluster_0, iteration) # every 100iter save images from G.
+                generate_image1(self.cluster_1, iteration) 
+                generate_image2(self.cluster_2, iteration) 
+                generate_image3(self.cluster_3, iteration) 
+
 
             if (iteration < 500) or (iteration % 1000 == 999):
                 # ideally we have the averages here
@@ -677,7 +781,7 @@ class WGAN(object):
                 print('Model saved.')
 
             if (cfg.INCEPTION_FREQUENCY != 0) and (iteration % cfg.INCEPTION_FREQUENCY == cfg.INCEPTION_FREQUENCY - 1):
-                inception_score = get_inception_score(50000)
+                inception_score = get_inception_score(10000)
                 print('INCEPTION SCORE:\t' + str(inception_score))
 
 

@@ -13,31 +13,44 @@ import numpy as np
 import tensorflow as tf
 
 
-def Generator_Resnet_32(cfg, n_samples, labels, noise=None, is_training=True):
+def Generator_Resnet_32(cfg, n_samples, labels, noise=None, HH_noise=None, is_training=True):
+    '''注意，这里的input_dim、output_dim分别指输入输出通道，不是输入输出feature map的宽高
+    is_training 的唯一作用就是决定如果用到Normalize函数要不要使之可训练
+    n_samples:int
+    labels: (bs,cfg.N_LABELS),one-hot
+    # HH_noise shape: (n_samples,128)
+
+    '''
     if noise is None:
-        noise = tf.random_normal([n_samples, 256]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
+        noise = tf.random_normal([n_samples, 128]) # 其实G的真正输入在这，就是默认输入就是G的输入最正宗的来源；noise 为2D向量，shape1比较重要
 
     add_dim = 0
     if cfg.LAYER_COND:
-        y = labels  #（2,32,32）
+        y = labels  # 期待形状：(bs,cfg.N_LABELS)
+        noise = tf.concat([noise,HH_noise],axis=1) # 遵循的原则是先拼接高频噪声再拼接标签
         noise = tflib.ops.concat.concat([noise, y], 1)  # (bs,256+cfg.N_LABELS), 
         add_dim = cfg.N_LABELS # number of cluster; y 的深度和N_LABELS是一致的
                                    # (name,inputdim,outputdim,inputs,...)； input dim 是输入时noise的1轴维度。
     output = lib.ops.linear.Linear('Generator.Input',  256 + add_dim, 4 * 4 * cfg.DIM_G, noise) # matmul noise with uniform/Gaussion distribution; noise.shape[1] are feature dimension.
-    output = tf.reshape(output, [-1, cfg.DIM_G, 4, 4])
+    # output_HH = lib.ops.linear.Linear('Generator.HH_Input',input_dim=768, output_dim=2048, HH_noise) # 采用16*16*3的高频噪声,这里HH_noise的输入形状是(bs,768)
+    output = tf.reshape(output, [-1, cfg.DIM_G, 4, 4]) # output:(bs,128,4,4) ,HH_noise:(bs,128), label:(bs,128)
+    output_HH = tf.reshape(HH_noise,[-1,8,4,4]) # 128
+    # concat 合并操作在ResiBlock中进行
     #(cfg,name,input_dim,output_dim,filter_size,inputs,resample,no_dropout,labels,is_traing=True)
-    output = ResidualBlock(cfg, 'Generator.1', cfg.DIM_G, cfg.DIM_G, filter_size=3, inputs= output, resample='up', labels=labels,
-                           is_training=is_training)
-    output = ResidualBlock(cfg, 'Generator.2', cfg.DIM_G, cfg.DIM_G, 3, output, resample='up', labels=labels,
-                           is_training=is_training)
-    output = ResidualBlock(cfg, 'Generator.3', cfg.DIM_G, cfg.DIM_G, 3, output, resample='up', labels=labels,
-                           is_training=is_training)
+    output,output_HH = ResidualBlock(cfg, 'Generator.1', cfg.DIM_G, cfg.DIM_G, filter_size=3, inputs= output, HH_noise=output_HH, resample='up', labels=labels,
+                           is_training=is_training) # output shape:(bs,128,8,8),(bs,8,8,8)
+    output,output_HH = ResidualBlock(cfg, 'Generator.2', cfg.DIM_G, cfg.DIM_G, 3, output, HH_noise=output_HH, resample='up', labels=labels,
+                           is_training=is_training) # output shape:(bs,128,16,16),(bs,8,16,16)
+    output,output_HH = ResidualBlock(cfg, 'Generator.3', cfg.DIM_G, cfg.DIM_G, 3, output, HH_noise=output_HH, resample='up', labels=labels,
+                           is_training=is_training) # output shape:(bs,128,32,32),(bs,8,32,32)
     output = Normalize(cfg, 'Generator.OutputN', output, is_training=is_training)
-    output = nonlinearity(output)
+    output = nonlinearity(output) 
     if cfg.LAYER_COND:
-        yb = tf.reshape(y, [-1, cfg.N_LABELS, 1, 1])
+        output = tf.concat([output,output_HH],axis=1)
+        yb = tf.reshape(y, [-1, cfg.N_LABELS, 1, 1]) # one-hot(12,128) -> (12,128,1,1)
         output = tflib.ops.concat.conv_cond_concat(output, yb)
-    output = lib.ops.conv2d.Conv2D('Generator.Output', cfg.DIM_G + add_dim, 3, 3, output, he_init=False)
+
+    output = lib.ops.conv2d.Conv2D('Generator.Output', cfg.DIM_G + 8 + add_dim, 3, 3, output, he_init=False) # input channels:128+8+add_dim=264,output channels:3, 输出的形状是(bs,3,32,32)
     output = tf.tanh(output)
     return tf.reshape(output, [-1, cfg.OUTPUT_DIM])
 
@@ -49,11 +62,12 @@ def Discriminator_Resnet_32(cfg, inputs, labels,is_training=True):
         y = labels
         add_dim = cfg.N_LABELS
     output = OptimizedResBlockDisc1(cfg, output, labels=labels)
-    output = ResidualBlock(cfg, 'Discriminator.2', cfg.DIM_D, cfg.DIM_D, 3, output, resample='down', labels=labels,
+
+    output = ResidualBlock_D(cfg, 'Discriminator.2', cfg.DIM_D, cfg.DIM_D, 3, output, resample='down', labels=labels,
                            is_training=is_training)
-    output = ResidualBlock(cfg, 'Discriminator.3', cfg.DIM_D, cfg.DIM_D, 3, output, resample=None, labels=labels,
+    output = ResidualBlock_D(cfg, 'Discriminator.3', cfg.DIM_D, cfg.DIM_D, 3, output, resample=None, labels=labels,
                            is_training=is_training)
-    output = ResidualBlock(cfg, 'Discriminator.4', cfg.DIM_D, cfg.DIM_D, 3, output, resample=None, labels=labels,
+    output = ResidualBlock_D(cfg, 'Discriminator.4', cfg.DIM_D, cfg.DIM_D, 3, output, resample=None, labels=labels,
                            is_training=is_training)
     output = nonlinearity(output)
     output = tf.reduce_mean(output, axis=[2, 3])

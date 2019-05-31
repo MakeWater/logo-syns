@@ -14,7 +14,7 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
         labels = np.zeros(batch_size, dtype='int32')
         indices = range(n_images)
         random_state = np.random.RandomState(epoch_count[0])
-        random_state.shuffle(indices)
+        # random_state.shuffle(indices)
         epoch_count[0] += 1 # 每调用一次make_generator函数就返回一个全新的生成器对象，这个算是计数吧；
         for n, i in enumerate(indices):
             # assuming (B)CWH format
@@ -31,22 +31,23 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
                 # print('images_HH shape is:',images_HH.shape)
                 assert (images_HH.shape == (batch_size,128))
                 yield (images, labels,images_HH) # return numpy type data; images_HH as noise; 返回的noise形状是(bs,768)
-    return get_epoch
+    return get_epoch # return a generator object
 
 
 def load(batch_size, data_file='/home/maolongchun/logo-syns/wgan/data/LLD-icon-sharp.hdf5', resolution=32, label_name=None):
-    with h5py.File('data_file','r') as hdf5_file:
-        # hdf5_file = h5py.File(data_file, 'r')
+
+        hdf5_file = h5py.File(data_file, 'r')
         n_images = len(hdf5_file['data'])
         if label_name is not None:
             n_labels = len(hdf5_file[label_name])
             n_images = min(n_images, n_labels)
+
         return make_generator(hdf5_file, n_images, batch_size, res=resolution, label_name=label_name)
 
 
 def load_new(cfg):
     label_name = cfg.LABELS if cfg.LABELS != 'None' else None # cfg.LABELS is a path to labels in hdf5 file.
-    return load(cfg.BATCH_SIZE, cfg.DATA, cfg.OUTPUT_RES, label_name=label_name) # 最终返回一个生成器对象
+    return load(cfg.BATCH_SIZE, cfg.DATA, cfg.OUTPUT_RES, label_name=label_name) # return a load() function object.
 
 
 if __name__ == '__main__':

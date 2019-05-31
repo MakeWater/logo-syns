@@ -19,7 +19,7 @@ def unset_weights_stdev():
     _weights_stdev = None
 
 def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_type=None, stride=1, weightnorm=None, biases=True, gain=1.):
-    """
+    """            256          128          3
     inputs: tensor of shape (batch size, num channels, height, width)
     mask_type: one of None, 'a', 'b'
 
@@ -32,15 +32,15 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
 
             mask = np.ones(
                 (filter_size, filter_size, input_dim, output_dim), 
-                dtype='float32'
-            )
+                dtype='float32')
+
             center = filter_size // 2
 
             # Mask out future locations # 屏蔽未来位置
             # filter shape is (height, width, input channels, output channels)
             mask[center+1:, :, :, :] = 0.
             mask[center, center+1:, :, :] = 0.
-
+            
             # Mask out future channels
             for i in xrange(mask_n_channels):
                 for j in xrange(mask_n_channels):
@@ -57,19 +57,17 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             #从均匀分布中采样，包含下界，不含上界
             return np.random.uniform(
                 low=-stdev * np.sqrt(3),
-                high=stdev * np.sqrt(3),
-                size=size
-            ).astype('float32')
+                high=stdev * np.sqrt(3),size=size).astype('float32')
 
-        fan_in = input_dim * filter_size**2
-        fan_out = output_dim * filter_size**2 / (stride**2)
+        fan_in = input_dim * filter_size**2  # 256*3**2 = 256*9= 2304
+        fan_out = output_dim * filter_size**2 / (stride**2) # 128*9 / 1 = 1157
 
         if mask_type is not None: # only approximately correct
             fan_in /= 2.
             fan_out /= 2.
 
         if he_init:
-            filters_stdev = np.sqrt(4./(fan_in+fan_out))
+            filters_stdev = np.sqrt(4./(fan_in+fan_out)) # 0.001153...
         else: # Normalized init (Glorot & Bengio)
             filters_stdev = np.sqrt(2./(fan_in+fan_out))
 
@@ -81,7 +79,7 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
         else:
             filter_values = uniform(
                 filters_stdev,
-                (filter_size, filter_size, input_dim, output_dim)
+                (filter_size, filter_size, input_dim, output_dim) # (3,3,256,128),均匀分布初始化
             )
 
         # print "WARNING IGNORING GAIN"
@@ -90,7 +88,7 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
         filters = lib.param(name+'.Filters', filter_values)
 
         if weightnorm==None:
-            weightnorm = _default_weightnorm
+            weightnorm = _default_weightnorm # False
         if weightnorm:
             norm_values = np.sqrt(np.sum(np.square(filter_values), axis=(0,1,2)))
             target_norms = lib.param(
@@ -105,13 +103,14 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             with tf.name_scope('filter_mask'):
                 filters = filters * mask
 
+        # uniform,fan_in,fan_out,filters_stdev,filter_values,filters, 以上部分都是在计算一个 filters
         result = tf.nn.conv2d(
-            input=inputs, 
-            filter=filters, 
+            input=inputs,  # (bs,128,8,8)
+            filter=filters, # (3,3,256,128),input channel:256,output channel:128.
             strides=[1, 1, stride, stride],
             padding='SAME',
             data_format='NCHW'
-        )
+        ) # output shape: (bs,128,8,8)
 
         if biases:
             _biases = lib.param(
@@ -122,4 +121,4 @@ def Conv2D(name, input_dim, output_dim, filter_size, inputs, he_init=True, mask_
             result = tf.nn.bias_add(result, _biases, data_format='NCHW')
 
 
-        return result
+        return result # output shape: (bs,output_dim,8,8) 
