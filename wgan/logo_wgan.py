@@ -517,22 +517,23 @@ class WGAN(object):
         if cfg.LAYER_COND:
             fake_labels_100 = tf.cast(tf.one_hot(fake_labels_100, cfg.N_LABELS), tf.float32)
         
-        # sample_inception_loader = self.get_data_loader()
-        # gen_samples = sample_inception_loader.load_new(cfg) # 又创建一个新的生成器对象
-        # def sample_loader():
-        #     while True:
-        #         for img, lab, img_hh in gen_samples():
-        #             yield img, lab, img_hh
-        # sample_gen = sample_loader()
-        # _ , lab, img_hh = sample_gen.next() # 生成器都自带next方法，去下一个batch的数据
-        # fake_lab = tf.cast(tf.one_hot(lab,depth= cfg.N_LABELS),tf.float32)
 
-        samples_100 = self.Generator(cfg, 100, fake_labels_100, noise=self.fixed_noise, is_training=self.t_train) # 用于计算inception_score的G
+        # for train
+        data_loader = self.get_data_loader()
+        train_gen = data_loader.load_new(cfg) # 每使用一次load_new方法就返回一个新的生成器
+        def inf_train_gen():  # 从数据集加载数据和label
+            while True:
+                for images, _labels, images_HH in train_gen():
+                    yield images, _labels, images_HH # images_HH for G inputs.
+
+        gen = inf_train_gen()
+        sample_images, sample_labels, sample_images_HH = gen.next() #shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
+        samples_64 = self.Generator(cfg, 64, sample_labels, HH_noise=sample_images_HH, is_training=self.t_train) # 用于计算inception_score的G
         def get_inception_score(n): # n=100
             all_samples = []
             for i in xrange(n / 100): # xrange产生的是一个生成器对象
                 # todo
-                all_samples.append(session.run(samples_100, feed_dict={self.t_train: True}))
+                all_samples.append(session.run(samples_64, feed_dict={self.t_train: True}))
             all_samples = np.concatenate(all_samples, axis=0)
             all_samples = ((all_samples + 1.) * (255.99 / 2)).astype('int32') # (all_samples+1)*127
             all_samples = all_samples.reshape((-1, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)).transpose(0, 2, 3, 1) #3通道32x32的图片
@@ -568,23 +569,14 @@ class WGAN(object):
         self.saver = tf.train.Saver()
         self.restore_model()
         
-        # for train
-        data_loader = self.get_data_loader()
-        train_gen = data_loader.load_new(cfg) # 每使用一次load_new方法就返回一个新的生成器
-        def inf_train_gen():  # 从数据集加载数据和label
-            while True:
-                for images, _labels, images_HH in train_gen():
-                    yield images, _labels, images_HH # images_HH for G inputs.
 
-        gen = inf_train_gen()
-        sample_images, sample_labels, sample_images_HH = gen.next() #shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
-        if sample_labels is None:
-            sample_labels = [0] * cfg.BATCH_SIZE
-        # Save a batch of ground-truth samples 
-        _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images}) # 传入(bs,3,32,32)真实图片
-        _x_r = ((_x_r + 1.) * (255.99 / 2)).astype('int32')
-        lib.save_images.save_images(_x_r.reshape((cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
-                                    os.path.join(self.run_dir, 'samples_groundtruth.png'))
+        # if sample_labels is None:
+        #     sample_labels = [0] * cfg.BATCH_SIZE
+        # # Save a batch of ground-truth samples 
+        # _x_r = self.session.run(real_data, feed_dict={self.all_real_data_int: sample_images}) # 传入(bs,3,32,32)真实图片
+        # _x_r = ((_x_r + 1.) * (255.99 / 2)).astype('int32')
+        # lib.save_images.save_images(_x_r.reshape((cfg.BATCH_SIZE, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+        #                             os.path.join(self.run_dir, 'samples_groundtruth.png'))
 
 
         if cfg.CONDITIONAL and cfg.ACGAN:
