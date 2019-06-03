@@ -208,6 +208,33 @@ class WGAN(object):
             source = ['', 'home'] + [self.cfg.DATA.split('/')[2]] + ['scratch'] + self.cfg.DATA.split('/')[3:]
             copyfile('/'.join(source), self.cfg.DATA) # 从绝对路径复制文件到目标路径cfg.DATA
             print('copied data')
+
+        def data_sample():
+            cluster = []
+            label_sample = []
+            with h5py.File('data/LLD-icon-sharp2.hdf5','r') as f:
+                data = np.array(f['data'])
+                HH_noise = np.array(f['data_hh'])
+                label = np.array(f['labels/resnet1/rc_128'])
+                class_indices = [np.where(label == i)[0] for i in range(self.cfg.N_LABELS)] #######################################  range(N_LABELS)
+                sample_cluster = [16,45,103,124]
+                for cluster_label in sample_cluster:
+                    index_list = np.random.choice(class_indices[cluster_label],12)
+                    sample_images = data[index_list] # (12,32,32,3)
+                    lib.save_images.save_images(sample_images,'sample_{}.png'.format(cluster_label))   
+
+                    HH_noise_sample = HH_noise[index_list]
+                    label_ = label[index_list]
+                    cluster.append(HH_noise_sample)
+                    label_sample.append(label_)
+            return data,HH_noise,label,cluster,label_sample # (bs,3,32,32),(bs,128),(4,12,3,32,32),(4,12,)
+
+        self.data,self.HH_noise,self.label,cluster,label_sample = data_sample()
+        assert(len(self.data)==len(self.HH_noise)==len(self.label))
+        self.cluster0, self.label0 = cluster[0], tf.one_hot(np.array(label_sample[0],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster1, self.label1 = cluster[1], tf.one_hot(np.array(label_sample[1],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster2, self.label2 = cluster[2], tf.one_hot(np.array(label_sample[2],dtype='int32'),depth=self.cfg.N_LABELS)
+        self.cluster3, self.label3 = cluster[3], tf.one_hot(np.array(label_sample[3],dtype='int32'),depth=self.cfg.N_LABELS)
         # ______________________________________________________________________________ # 构造函数__init__到此结束
 
     def get_data_loader(self):
@@ -499,12 +526,37 @@ class WGAN(object):
 
         # Function for generating samples
         # todo: check possibility to change this to none
-        fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 用于产生可视图像的G；传入的label和噪声要有对应关系才行
+        # fixed_noise_samples = self.Generator(cfg, 100, self.fixed_labels, noise=self.fixed_noise, is_training=self.t_train) # 用于产生可视图像的G；传入的label和噪声要有对应关系才行
+        # # Function to generate samples
+        # def generate_image(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+        #     samples = self.session.run(fixed_noise_samples, feed_dict={self.t_train: True})
+        #     samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+        #     lib.save_images.save_images(samples.reshape((100, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+        #                                 os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
         # Function to generate samples
-        def generate_image(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
-            samples = self.session.run(fixed_noise_samples, feed_dict={self.t_train: True})
+        def generate_image0(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples0, feed_dict={self.t_train: True})
             samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
-            lib.save_images.save_images(samples.reshape((100, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image1(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples1, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image2(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples2, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
+                                        os.path.join(log_dir, 'samples_{}.png'.format(frame)))
+
+        def generate_image3(log_dir, frame): # 把由G产生的假样本保存保存到指定路径为图片
+            samples = self.session.run(fixed_noise_samples3, feed_dict={self.t_train: True})
+            samples = ((samples + 1.) * (255. / 2)).astype('int32')   # 为什么要做这一步处理？我看很多地方都有这种处理
+            lib.save_images.save_images(samples.reshape((12, 3, cfg.OUTPUT_RES, cfg.OUTPUT_RES)),
                                         os.path.join(log_dir, 'samples_{}.png'.format(frame)))
 
         # Function for calculating inception score
@@ -645,7 +697,10 @@ class WGAN(object):
                                                                                   self.new_noise: sample_images_HH,
                                                                                   self.t_train: True})
                 summary_writer.add_summary(_dev_cost_summary, iteration)
-                generate_image(self.sample_dir, iteration) # 这里检验G的生成图片
+                generate_image0(self.cluster_0, iteration) # every 100iter save images from G.
+                generate_image1(self.cluster_1, iteration) 
+                generate_image2(self.cluster_2, iteration) 
+                generate_image3(self.cluster_3, iteration) 
 
             if (iteration < 500) or (iteration % 1000 == 999):
                 # ideally we have the averages here
