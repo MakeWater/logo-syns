@@ -83,7 +83,7 @@ class Config(object):
         if self.LR == 0:
             if self.MODE == 'wgan-gp':
                 if self.ARCHITECTURE == 'resnet-32':
-                    self.LR = 2e-4
+                    self.LR = 1e-4
                 else:
                     self.LR = 1e-4
             if self.MODE == 'wgan':
