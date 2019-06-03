@@ -615,18 +615,21 @@ class WGAN(object):
                 hh_noise = HH_noise[batch:(batch+1)*batch_size]
                 yield dt,lab,hh_noise
 
-        # inception_sample_loader = self.get_data_loader()
-        # sample_gen = inception_sample_loader.load_new(cfg)
-        # def inf_gen():
-        #     while True:
-        #         for batch_data,batch_label,batch_noise in sample_gen():
-        #             yield batch_data,batch_label,batch_noise
-
-        # label = tf.one_hot(tf.cast(label,tf.int32),depth=cfg.N_LABELS)
         incep_gen = batch_generator(self.data,self.HH_noise,self.label,cfg.BATCH_SIZE)
         batch_data,batch_label,batch_noise = incep_gen.next() # 如果是生成器对象该对象可以直接调用.next()方法
         batch_label = tf.one_hot(batch_label,depth=cfg.N_LABELS)
-        samples_64 = self.Generator(cfg, 64, batch_label, HH_noise=batch_noise, is_training=self.t_train) # 用于计算inception_score的G
+
+        data_loader = self.get_data_loader()
+        train_gen = data_loader.load_new(cfg) # train_gen是load_new(cfg)函数返回的一个函数对象，不是生成器对象
+        def inf_train_gen():  # 从数据集加载数据和label
+            while True:
+                for images, _labels, images_HH in train_gen():
+                    yield images, _labels, images_HH # images_HH for G inputs.
+
+        gen = inf_train_gen()
+        sample_images, sample_labels, sample_images_HH = gen.next() # shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
+
+        samples_64 = self.Generator(cfg, 64, sample_labels, HH_noise=sample_images_HH, is_training=self.t_train) # 用于计算inception_score的G
 
         def get_inception_score(n): # n=100
             all_samples = []
@@ -668,16 +671,7 @@ class WGAN(object):
         self.saver = tf.train.Saver()
         self.restore_model()
         
-        # for train
-        data_loader = self.get_data_loader()
-        train_gen = data_loader.load_new(cfg) # train_gen是load_new(cfg)函数返回的一个函数对象，不是生成器对象
-        def inf_train_gen():  # 从数据集加载数据和label
-            while True:
-                for images, _labels, images_HH in train_gen():
-                    yield images, _labels, images_HH # images_HH for G inputs.
 
-        gen = inf_train_gen()
-        sample_images, sample_labels, sample_images_HH = gen.next() # shape:(bs,3,32,32),(bs,),(bs,368), BCHW 
         # if sample_labels is None:
         #     sample_labels = [0] * cfg.BATCH_SIZE
         # # Save a batch of ground-truth samples 
