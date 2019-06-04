@@ -72,7 +72,7 @@ class Config(object):
 
         self.OUTPUT_RES = 32 # icon图标的宽高为32x32，也是Res-Generator最后生成图像的大小
         self.OUTPUT_DIM = self.OUTPUT_RES * self.OUTPUT_RES * 3  # 一张图片的总像素数
-        self.RUN_NAME = 'sharp128_newLR_GH'  # name for this experiment run          #################################
+        self.RUN_NAME = 'sharp128-64dHH'  # name for this experiment run          #################################
         self.SUMMARY_FREQUENCY = 1  # How frequently to write out a tensorboard summary
 
         if self.N_GPUS not in [1, 2]:

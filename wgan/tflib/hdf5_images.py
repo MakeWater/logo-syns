@@ -9,7 +9,7 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
     def get_epoch():
         # print('new epoch!')
         images = np.zeros((batch_size, 3, res, res), dtype='int32') # return images' shape
-        images_HH_temp = np.zeros((batch_size,128), dtype='int32') # 3*16*16 = 768
+        images_HH_temp = np.zeros((batch_size,64), dtype='int32') # 3*16*16 = 768
 
         labels = np.zeros(batch_size, dtype='int32')
         indices = range(n_images)
@@ -19,7 +19,7 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
         for n, i in enumerate(indices):
             # assuming (B)CWH format
             images[n % batch_size] = hdf5_file['data'][i]
-            images_HH_temp[n % batch_size] = hdf5_file['data_hh'][i]
+            images_HH_temp[n % batch_size] = hdf5_file['data_hh_64d'][i]
             if label_name is not None:
                 labels[n % batch_size] = hdf5_file[label_name][i]
             if n > 0 and n % batch_size == 0:
@@ -29,12 +29,12 @@ def make_generator(hdf5_file, n_images, batch_size, res, label_name=None): # lab
                 assert (images.shape == (batch_size,3,32,32))
                 assert (labels.shape == (batch_size,))
                 # print('images_HH shape is:',images_HH.shape)
-                assert (images_HH.shape == (batch_size,128))
+                assert (images_HH.shape == (batch_size,64))
                 yield (images, labels,images_HH) # return numpy type data; images_HH as noise; 返回的noise形状是(bs,768)
     return get_epoch
 
 
-def load(batch_size, data_file='/home/maolongchun/logo-syns/wgan/data/LLD-icon-sharp.hdf5', resolution=32, label_name=None):
+def load(batch_size, data_file='/home/maolongchun/logo-syns/wgan/data/LLD/LLD-icon-sharp.hdf5', resolution=32, label_name=None):
     hdf5_file = h5py.File(data_file, 'r')
     n_images = len(hdf5_file['data'])
     if label_name is not None:
