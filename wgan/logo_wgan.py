@@ -53,7 +53,7 @@ class Config(object):
         self.GEN_BS_MULTIPLE = 2  # Generator batch size, as a multiple of BATCH_SIZE 作为批量大小的倍数
 
         self.ITERS = 100000  # How many iterations to train for
-        self.INCEPTION_FREQUENCY = 10000 # How frequently to calculate Inception score
+        self.INCEPTION_FREQUENCY = 1000 # How frequently to calculate Inception score
         self.KEEP_CHECKPOINTS = 5  # Number of checkpoints to keep (long-term, spread out over entire training time)
 
         self.LABELS = 'labels/resnet1/rc_128'  # Path to labels: Either the filesystem location of a pickle file containing the labels or the path to the label dataset within a HDF5 file  ####################
